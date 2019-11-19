@@ -2,19 +2,23 @@
  * @Author: Antoine YANG 
  * @Date: 2019-11-19 09:05:27 
  * @Last Modified by: Antoine YANG
- * @Last Modified time: 2019-11-19 15:59:13
+ * @Last Modified time: 2019-11-20 00:00:25
  */
 
 import React, { Component } from 'react';
-import { Position, Direction, $Line, Graph, CanvasProps, Projection } from './TypeLib';
+import { Position, $Line, Graph, CanvasProps, Projection } from './TypeLib';
 import $ from 'jquery';
+import Color from './preference/Color';
 
 
 class Canvas extends Component<CanvasProps, {}, {}> {
     private Camera: Position;
     private readonly cameraAngleHorizontal: number = Math.PI * 2 / 3;
     private readonly cameraAngleVertical: number = Math.PI / 2;
-    private Header: Direction;
+    private Header: {
+        horizontal: number;
+        vertical: number;
+    };
     private height: number = 0;
     private moving = {
         front: false,
@@ -23,6 +27,19 @@ class Canvas extends Component<CanvasProps, {}, {}> {
         back: false,
         jumping: false
     };
+    private turning = {
+        left: false,
+        right: false,
+        up: false,
+        down: false
+    };
+    private jumpHeight: Array<number> = [
+        0, -0.05, -0.08, -0.1, -0.12, -0.13, -0.08,
+        0, 0.176, 0.342, 0.5, 0.648, 0.788, 0.918, 1.04, 1.152, 1.256, 1.35,
+        1.435, 1.512, 1.58, 1.58,
+        1.567, 1.538, 1.497, 1.444, 1.381, 1.309, 1.228, 1.138, 1.04, 0.934, 0.821, 0.7,
+        0.571, 0.436, 0.293, 0.144, -0.12, -0.051
+    ];
     private units: Array<$Line>;
     private Background: HTMLCanvasElement | null;
     private ctx_Background: CanvasRenderingContext2D | null;
@@ -33,32 +50,33 @@ class Canvas extends Component<CanvasProps, {}, {}> {
     public constructor(props: CanvasProps) {
         super(props);
         this.Camera = {
-            x: 25, y: -5, z: 3
+            x: 10, y: 50, z: 2
         };
         this.Header = {
-            x: 0, y: 1, z: 0
-        }
+            horizontal: 0,
+            vertical: 0
+        };
         this.Background = null;
         this.ctx_Background = null;
         this.lastStyle_Background = '#FF0000';
         this.units = [];
         this.graphs = [];
-        for (let x: number = 0; x <= 50; x++) {
+        for (let x: number = 0; x <= 20; x++) {
             this.units.push({
                 source: { x: x, y: 0, z: 0 },
-                target: { x: x, y: 50, z: 0 },
+                target: { x: x, y: 100, z: 0 },
                 style: {
-                    color: 'black',
+                    color: Color.Nippon.Gohunn,
                     width: 1
                 }
             });
         }
-        for (let y: number = 0; y <= 50; y++) {
+        for (let y: number = 0; y <= 100; y++) {
             this.units.push({
                 source: { x: 0, y: y, z: 0 },
-                target: { x: 50, y: y, z: 0 },
+                target: { x: 20, y: y, z: 0 },
                 style: {
-                    color: 'black',
+                    color: Color.Nippon.Gohunn,
                     width: 1
                 }
             });
@@ -68,29 +86,35 @@ class Canvas extends Component<CanvasProps, {}, {}> {
         });
 
         this.timer = setInterval(() => {
-            let step: number = 0.1;
-            if (((this.moving.front && !this.moving.back) || (!this.moving.front && this.moving.back))
-            && ((this.moving.left && !this.moving.right) || (!this.moving.left && this.moving.right))) {
-                step /= Math.sqrt(2);
-            }
-            if (this.moving.jumping) {
-                step /= Math.sqrt(2);
-            }
-            if (this.moving.front) {
-                this.Camera.y += step;
-            }
-            if (this.moving.left) {
-                this.Camera.x -= step;
-            }
-            if (this.moving.back) {
-                this.Camera.y -= step;
-            }
-            if (this.moving.right) {
-                this.Camera.x += step;
-            }
-            this.draw();
+            this.tick();
         }, 1000 / 60);
+    }
 
+    public render(): JSX.Element {
+        return (
+            <canvas key="Canvas_Background" id="BackgroundLayer" ref="BackgroundLayer"
+            width={ `${ this.props.width }px` } height={ `${ this.props.height }px` }
+            style={{
+                background: Color.Nippon.Kati
+            }} />
+        );
+    }
+
+    public componentDidMount(): void {
+        this.Background = document.getElementById("BackgroundLayer") as HTMLCanvasElement;
+        this.ctx_Background = this.Background!.getContext('2d');
+        this.ctx_Background!.strokeStyle = this.lastStyle_Background;
+        this.draw();
+        this.onGameStart();
+    }
+
+    public componentDidUpdate(): void {}
+
+    public componentWillUnmount(): void {
+        clearInterval(this.timer);
+    }
+
+    private onGameStart(): void {
         $('*').keydown((e: JQuery.KeyDownEvent<HTMLElement, null, HTMLElement, HTMLElement>) => {
             if (this.moving.jumping) {
                 return;
@@ -111,18 +135,21 @@ class Canvas extends Component<CanvasProps, {}, {}> {
                 // D
                 this.moving.right = true;
             }
-            if (e.which === 32) {
-                // space
-                this.moving.jumping = true;
-                setTimeout(() => {
-                    this.height = 0;
-                    this.moving.jumping = false;
-                }, 650);
-                for (let i: number = 0; i < 600; i += 15) {
-                    setTimeout(() => {
-                        this.height = i <= 360 ? i / 180 : 1.5 - (i - 360) / 240;
-                    }, i);
-                }
+            // if (e.which === 38) {
+            //     // up
+            //     this.turning.up = true;
+            // }
+            if (e.which === 37) {
+                // left
+                this.turning.left = true;
+            }
+            // if (e.which === 40) {
+            //     // down
+            //     this.turning.down = true;
+            // }
+            if (e.which === 39) {
+                // right
+                this.turning.right = true;
             }
         })
         .keyup((e: JQuery.KeyUpEvent<HTMLElement, null, HTMLElement, HTMLElement>) => {
@@ -142,30 +169,83 @@ class Canvas extends Component<CanvasProps, {}, {}> {
                 // D
                 this.moving.right = false;
             }
+            // if (e.which === 38) {
+            //     // up
+            //     this.turning.up = false;
+            // }
+            if (e.which === 37) {
+                // left
+                this.turning.left = false;
+            }
+            // if (e.which === 40) {
+            //     // down
+            //     this.turning.down = false;
+            // }
+            if (e.which === 39) {
+                // right
+                this.turning.right = false;
+            }
+        })
+        .keypress((e: JQuery.KeyPressEvent<HTMLElement, null, HTMLElement, HTMLElement>) => {
+            if (this.moving.jumping) {
+                return;
+            }
+            if (e.which === 32) {
+                // space
+                this.moving.jumping = true;
+                setTimeout(() => {
+                    this.height = 0;
+                    this.moving.jumping = false;
+                }, 1200);
+                for (let i: number = 0; i < this.jumpHeight.length; i ++) {
+                    setTimeout(() => {
+                        this.height = this.jumpHeight[i];
+                    }, i * 25);
+                }
+            }
         });
     }
 
-    public render(): JSX.Element {
-        return (
-            <canvas key="Canvas_Background" id="BackgroundLayer" ref="BackgroundLayer"
-            width={ `${ this.props.width }px` } height={ `${ this.props.height }px` }
-            style={{
-                background: 'yellow'
-            }} />
-        );
-    }
-
-    public componentDidMount(): void {
-        this.Background = document.getElementById("BackgroundLayer") as HTMLCanvasElement;
-        this.ctx_Background = this.Background!.getContext('2d');
-        this.ctx_Background!.strokeStyle = this.lastStyle_Background;
+    private tick(): void {
+        if (this.turning.up) {
+            this.Header.vertical += 0.02;
+        }
+        if (this.turning.down) {
+            this.Header.vertical -= 0.02;
+        }
+        if (this.Header.vertical > Math.PI * 4 / 5) {
+            this.Header.vertical = Math.PI * 4 / 5;
+        }
+        else if (this.Header.vertical < Math.PI * 2 / 3) {
+            this.Header.vertical = Math.PI * 2 / 3;
+        }
+        if (this.turning.left) {
+            this.Header.horizontal -= 0.02;
+        }
+        if (this.turning.right) {
+            this.Header.horizontal += 0.02;
+        }
+        let step: number = 0.1;
+        if (((this.moving.front && !this.moving.back) || (!this.moving.front && this.moving.back))
+        && ((this.moving.left && !this.moving.right) || (!this.moving.left && this.moving.right))) {
+            step /= 2;
+        }
+        if (this.moving.jumping) {
+            step /= 2;
+        }
+        if (this.moving.front) {
+            this.Camera.y += step;
+        }
+        if (this.moving.left) {
+            this.Camera.x -= step;
+        }
+        if (this.moving.back) {
+            this.Camera.y -= step / Math.sqrt(2);
+        }
+        if (this.moving.right) {
+            this.Camera.x += step;
+        }
         this.draw();
-    }
-
-    public componentDidUpdate(): void {}
-
-    public componentWillUnmount(): void {
-        clearInterval(this.timer);
     }
 
     private draw(): void {
@@ -176,29 +256,66 @@ class Canvas extends Component<CanvasProps, {}, {}> {
         this.graphs.forEach((graph: Graph) => {
             if (graph as $Line) {
                 let line: $Line = graph as $Line;
-                this.parseLine(line);
+                const dis1: number = Math.sqrt(Math.pow(line.source.x - this.Camera.x, 2) + Math.pow(line.source.y - this.Camera.y, 2));
+                const angle1: number = line.source.y > this.Camera.y
+                    ? Math.acos((line.source.x - this.Camera.x) / dis1) + this.Header.horizontal
+                    : - Math.acos((line.source.x - this.Camera.x) / dis1) + this.Header.horizontal;
+                // const angle1: number = line.source.y > this.Camera.y
+                //     ? Math.asin((line.source.x - this.Camera.x) / dis1) + this.Header.horizontal
+                //     : Math.PI + Math.asin((line.source.x - this.Camera.x) / dis1) + this.Header.horizontal;
                 const source: Position = {
-                    x: line.source.x - this.Camera.x,
-                    y: line.source.y - this.Camera.y,
+                    // x: line.source.x - this.Camera.x,
+                    // y: line.source.y - this.Camera.y,
+                    x: dis1 * Math.cos(angle1),
+                    y: dis1 * Math.sin(angle1),
                     z: line.source.z - this.Camera.z - this.height
                 };
+                const dis2: number = Math.sqrt(Math.pow(line.target.x - this.Camera.x, 2) + Math.pow(line.target.y - this.Camera.y, 2));
+                const angle2: number = line.target.y > this.Camera.y
+                    ? Math.acos((line.target.x - this.Camera.x) / dis2) + this.Header.horizontal
+                    : - Math.acos((line.target.x - this.Camera.x) / dis2) + this.Header.horizontal;
+                // const angle2: number = line.target.y > this.Camera.y
+                //     ? Math.asin((line.target.x - this.Camera.x) / dis2) + this.Header.horizontal
+                //     : Math.PI + Math.asin((line.target.x - this.Camera.x) / dis2) + this.Header.horizontal;
                 const target: Position = {
-                    x: line.target.x - this.Camera.x,
-                    y: line.target.y - this.Camera.y,
+                    // x: line.target.x - this.Camera.x,
+                    // y: line.target.y - this.Camera.y,
+                    x: dis2 * Math.cos(angle2),
+                    y: dis2 * Math.sin(angle2),
                     z: line.target.z - this.Camera.z - this.height
                 };
                 let p1: Projection = {
-                    x: 0.5 + source.x / Math.tan(this.cameraAngleHorizontal / 2) / Math.abs(source.y) / 2,
+                    x: source.y >= 0
+                        ? 0.5 + source.x / Math.tan(this.cameraAngleHorizontal / 2) / source.y / 2
+                        : 0.5 - (source.x * Math.tan(this.cameraAngleHorizontal / 2 - Math.PI / 2) * (1 - source.y) / 2),
                     y: source.y >= 0
                         ? 0.5 - source.z / Math.tan(this.cameraAngleVertical / 2) / source.y / 2
-                        : NaN
+                        : 0.5 + source.z * Math.tan(this.cameraAngleVertical / 2 - Math.PI / 2) * (1 - source.y) / 2
                 };
                 let p2: Projection = {
-                    x: 0.5 + target.x / Math.tan(this.cameraAngleHorizontal / 2) / Math.abs(target.y) / 2,
+                    x: target.y >= 0
+                        ? 0.5 + target.x / Math.tan(this.cameraAngleHorizontal / 2) / target.y / 2
+                        : 0.5 - (target.x * Math.tan(this.cameraAngleHorizontal / 2 - Math.PI / 2) * (1 - target.y) / 2),
                     y: target.y >= 0
                         ? 0.5 - target.z / Math.tan(this.cameraAngleVertical / 2) / target.y / 2
-                        : NaN
+                        : 0.5 + target.z * Math.tan(this.cameraAngleVertical / 2 - Math.PI / 2) * (1 - target.y) / 2
                 };
+                // let p1: Projection = {
+                //     x: source.y >= 0
+                //         ? 0.5 + source.x / Math.tan(this.cameraAngleHorizontal / 2) / source.y / 2
+                //         : 0.5 - source.x * Math.tan(this.cameraAngleHorizontal / 2 - Math.PI / 2) * (1 - source.y) / 2,
+                //     y: source.y >= 0
+                //         ? 0.5 - source.z / Math.tan(this.cameraAngleVertical / 2) / source.y / 2
+                //         : 0.5 + source.z * Math.tan(this.cameraAngleVertical / 2 - Math.PI / 2) * (1 - source.y) / 2
+                // };
+                // let p2: Projection = {
+                //     x: target.y >= 0
+                //         ? 0.5 + target.x / Math.tan(this.cameraAngleHorizontal / 2) / target.y / 2
+                //         : 0.5 - target.x * Math.tan(this.cameraAngleHorizontal / 2 - Math.PI / 2) * (1 - target.y) / 2,
+                //     y: target.y >= 0
+                //         ? 0.5 - target.z / Math.tan(this.cameraAngleVertical / 2) / target.y / 2
+                //         : 0.5 + target.z * Math.tan(this.cameraAngleVertical / 2 - Math.PI / 2) * (1 - target.y) / 2
+                // };
                 if (this.isLineOut(p1, p2)) {
                     return;
                 }
@@ -214,28 +331,6 @@ class Canvas extends Component<CanvasProps, {}, {}> {
                 this.ctx_Background!.stroke();
             }
         });
-    }
-
-    private parseLine(p: $Line): void {
-        const SsugX: number = p.source.y / Math.tan(this.cameraAngleHorizontal / 2);
-        const TsugX: number = p.target.y / Math.tan(this.cameraAngleHorizontal / 2);
-        if (Math.abs(p.source.x) <= SsugX && Math.abs(p.target.x) <= TsugX) {
-            return;
-        }
-        if (Math.abs(p.source.x) <= SsugX) {
-            // p.target.y = p.source.y + p.target.y / (p.target.x - p.source.x) * (Math.sign(p.target.x) * TsugX - p.source.x);
-            // p.target.x = Math.sign(p.target.x) * TsugX;
-        }
-        else if (Math.abs(p.target.x) <= TsugX) {
-            // p.source.y = p.target.y + p.source.y / (p.source.x - p.target.x) * (Math.sign(p.source.x) * SsugX - p.target.x);
-            // p.source.x = Math.sign(p.source.x) * SsugX;
-        }
-        else {
-            // p.source.x = NaN;
-            // p.source.y = NaN;
-            // p.target.x = NaN;
-            // p.target.y = NaN;
-        }
     }
 
     private isLineOut(p1: Projection, p2: Projection): boolean {
